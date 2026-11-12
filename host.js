@@ -10,7 +10,10 @@
  * 不删附件（attachments 是内容寻址、多会话共用，没有引用计数）；查询索引是
  * 派生数据，下次读盘自行对账。
  *
- * 正在运行的会话直接拒绝：它的写入句柄还开着，删了会被写回来。
+ * 只删冷会话：dsh 进程里还挂着的会话一律拒绝。删除只动磁盘，摘不掉 Host 内存里的
+ * 那条，列表拉回来它还在，下一次落盘还会撞 ENOENT；而 0.2 没有按 id 释放 live
+ * 会话的公开接口（SessionStore 和 AgentRegistry 都没有），插件补不了这个洞。
+ * 用户重启 dsh 之后，那条会话变成磁盘上的冷会话，再删就干净了。
  * 所有 dsh 服务都通过 ctx.get 软取，拿不到就不删对应部分，不会抛到启动路径。
  */
 
@@ -25,8 +28,11 @@ export const inject = ['webServer']
 
 const ROUTE_PATH = '/plugins/dsh-session-delete/delete'
 const MAX_BODY_BYTES = 4096
-/** Session id 只允许安全字符，杜绝路径穿越。 */
-const SESSION_ID = /^session-[A-Za-z0-9][A-Za-z0-9._-]*$/
+/**
+ * Session id 只允许安全字符，杜绝路径穿越。
+ * 老会话的目录名是裸 UUID（不带 `session-` 前缀），所以不锁定前缀。
+ */
+const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 
 /** 写 JSON 响应；socket 已断开时吞掉。 */
 function send(res, status, body) {
@@ -39,6 +45,25 @@ function send(res, status, body) {
   } catch {
     // socket gone
   }
+}
+
+/**
+ * 请求是不是 dsh 自己页面发出的。
+ *
+ * 浏览器一定带 `Sec-Fetch-Site`：同源是 `same-origin`，别的网站发来的是
+ * `cross-site`（不同端口的 localhost 是 `same-site`，一样拒），页面脚本改不了这个头。
+ * 缺失说明不是浏览器发的（curl 之类本机进程），本机进程本来就能直接动磁盘，放行。
+ */
+function fromOwnPage(req) {
+  const site = req.headers['sec-fetch-site']
+  return site === undefined || site === 'same-origin'
+}
+
+/** 只收 JSON 请求体：跨站表单发不出这个 Content-Type，发出来也会触发预检。 */
+function isJsonRequest(req) {
+  const raw = req.headers['content-type']
+  if (typeof raw !== 'string') return false
+  return raw.split(';', 1)[0].trim().toLowerCase() === 'application/json'
 }
 
 /** 读取有大小上限的 JSON 请求体。 */
@@ -116,21 +141,19 @@ async function removeProjectionCache(cacheDir, sessionId) {
   }
 }
 
-/** 会话是否有正在执行的工作（回合、子智能体、后台任务、定时任务）。 */
-async function sessionActivity(ctx, sessionId) {
-  if (typeof ctx.waterfall !== 'function') return []
-  try {
-    return await ctx.waterfall('workspace/session-activity', { sessionId }, () => Promise.resolve([]))
-  } catch {
-    return []
-  }
-}
-
-/** POST /plugins/dsh-session-delete/delete —— 永久删除一条会话。 */
+/** POST /plugins/dsh-session-delete/delete —— 永久删除一条冷会话。 */
 
 async function handleDelete(req, res, ctx) {
   if (req.method !== 'POST') {
     send(res, 405, { error: 'POST only' })
+    return
+  }
+  if (!fromOwnPage(req)) {
+    send(res, 403, { error: 'cross-origin request refused' })
+    return
+  }
+  if (!isJsonRequest(req)) {
+    send(res, 415, { error: 'Content-Type must be application/json' })
     return
   }
   let body
@@ -145,21 +168,13 @@ async function handleDelete(req, res, ctx) {
     send(res, 400, { error: 'invalid sessionId' })
     return
   }
-  const force = body?.force === true
   const sessions = ctx.get('sessions')
-  const live = sessions !== undefined && sessions.get(sessionId) !== undefined
-  // Host 进程里还挂着这条会话：普通删除拒绝，让客户端来问一次「强制」。
-  if (live && !force) {
-    send(res, 409, { code: 'session/live', error: '会话还在 Host 进程里' })
+  // Host 进程里还挂着这条会话：删磁盘摘不掉内存里的那条，列表刷新后它还在，
+  // 之后任何一次落盘还会因为父目录没了而报 ENOENT。dsh 没有按 id 释放 live
+  // 会话的公开接口，所以只能拒绝，让用户重启后再来。
+  if (sessions !== undefined && sessions.get(sessionId) !== undefined) {
+    send(res, 409, { code: 'session/live', error: '会话还在 dsh 进程里，重启 dsh 后再删' })
     return
-  }
-  // 强制删除也不碰正在跑的工作：回合/子智能体/后台任务还在写日志。
-  if (live) {
-    const activity = await sessionActivity(ctx, sessionId)
-    if (activity.length > 0) {
-      send(res, 409, { code: 'session/active', error: '会话有正在执行的工作，先在会话里中断再删' })
-      return
-    }
   }
   // dsh 启动器会 provide dshHomePath；老/精简组合里没有就退回 DSH_HOME 或 ~/.dsh。
   const dshHomePath = ctx.get('dshHomePath')

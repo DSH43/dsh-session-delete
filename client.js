@@ -15,46 +15,41 @@ window.__ModuleLoader__.load({
     var React = require('react')
     var el = React.createElement
 
-    var COPY = {
+    /** dsh locale 命名空间：文案由 dsh 按当前语言解析，切换语言时重渲染。 */
+    var NS = 'sessionDelete'
+    var STRINGS = {
       zh: {
         menu: '删除会话',
         title: '永久删除此会话？',
-        body: function (title) {
-          return '“' + title + '”的会话日志、工作区记录和投影缓存会一起删除，无法恢复。只想移出列表的话用归档。'
-        },
+        body: '“{title}”的会话日志、工作区记录和投影缓存会一起删除，无法恢复。只想移出列表的话用归档。',
         cancel: '取消',
         confirm: '永久删除',
-        forceTitle: '会话还在 Host 里，强制删除？',
-        forceBody: function (title) {
-          return '“' + title + '”没在跑，但仍被 Host 进程持有。强制删除会清掉磁盘上的日志、工作区记录和缓存；内存里的会话要重启 dsh 才彻底释放，期间它可能把投影缓存写回来。'
-        },
-        forceConfirm: '强制删除',
-        failed: function (message) {
-          return '删除失败：' + (message || '未知错误')
-        },
+        live: '“{title}”还挂在 dsh 进程里，现在删不掉。重启 dsh 之后它就变成磁盘上的冷会话，那时再删就干净了。',
+        failed: '删除失败：{message}',
+        unknown: '未知错误',
       },
       en: {
         menu: 'Delete session',
         title: 'Permanently delete this session?',
-        body: function (title) {
-          return 'The log for “' + title + '”, its workspace record, and its projection cache will be deleted. This cannot be undone. Archive instead if you only want it out of the list.'
-        },
+        body: 'The log for “{title}”, its workspace record, and its projection cache will be deleted. This cannot be undone. Archive instead if you only want it out of the list.',
         cancel: 'Cancel',
         confirm: 'Delete permanently',
-        forceTitle: 'This session is still held by the Host. Force delete?',
-        forceBody: function (title) {
-          return '“' + title + '” is idle but still held by the Host process. Force delete removes the log, workspace record, and cache from disk; the in-memory session is released only after a dsh restart and may rewrite its cache file before then.'
-        },
-        forceConfirm: 'Force delete',
-        failed: function (message) {
-          return 'Delete failed: ' + (message || 'unknown error')
-        },
+        live: '“{title}” is still held by the running dsh process, so it cannot be deleted now. Restart dsh and it becomes a cold session on disk — delete it then.',
+        failed: 'Delete failed: {message}',
+        unknown: 'unknown error',
       },
     }
 
-    function copy() {
-      var lang = String(document.documentElement.lang || '').toLowerCase()
-      return lang.indexOf('zh') === 0 ? COPY.zh : COPY.en
+    /** 没有 locale 服务时的兜底翻译，按文档语言选词典。 */
+    function fallbackT(key, params) {
+      var lang = typeof document !== 'undefined' && String(document.documentElement.lang || '').indexOf('zh') === 0 ? 'zh' : 'en'
+      var dict = STRINGS[lang]
+      var template = dict[key] !== undefined ? dict[key] : STRINGS.zh[key]
+      if (typeof template !== 'string') return ''
+      if (params === undefined) return template
+      return template.replace(/\{(\w+)\}/g, function (_, name) {
+        return params[name] !== undefined ? String(params[name]) : ''
+      })
     }
 
     function injectStyles() {
@@ -164,12 +159,11 @@ window.__ModuleLoader__.load({
         if (slots === undefined) return
         injectStyles()
 
-        function requestDelete(sessionId, force) {
-          var payload = force === true ? { sessionId: sessionId, force: true } : { sessionId: sessionId }
+        function requestDelete(sessionId) {
           return fetch('/plugins/dsh-session-delete/delete', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
+            body: JSON.stringify({ sessionId: sessionId }),
           }).then(function (response) {
             return response.json().catch(function () { return {} }).then(function (data) {
               return { ok: response.ok, status: response.status, data: data }
@@ -182,42 +176,35 @@ window.__ModuleLoader__.load({
           if (sessions !== undefined && typeof sessions.refresh === 'function') void sessions.refresh()
         }
 
-        function failureText(text, result) {
-          return text.failed(result.data && (result.data.error || result.data.message))
+        function failureText(t, result) {
+          var message = result.data && (result.data.error || result.data.message)
+          return t('failed', { message: message || t('unknown') })
         }
 
         function DeleteSessionMenuItem(props) {
-          var text = copy()
+          var t = props != null && typeof props.t === 'function' ? props.t : fallbackT
           var setMenuOpen = props.useMenuOpenState()[1]
           function onSelect() {
             setMenuOpen(false)
             var title = props.displayTitle || props.sessionId
             void confirmDialog({
-              title: text.title, body: text.body(title),
-              cancelLabel: text.cancel, confirmLabel: text.confirm,
+              title: t('title'), body: t('body', { title: title }),
+              cancelLabel: t('cancel'), confirmLabel: t('confirm'),
             }).then(function (confirmed) {
               if (!confirmed) return
-              return requestDelete(props.sessionId, false).then(function (result) {
+              return requestDelete(props.sessionId).then(function (result) {
                 if (result.ok) {
                   refreshSessions()
                   return
                 }
-                // Host 还挂着这条会话：问一次是否强制，强制也只删空闲会话。
+                // 还挂在 dsh 进程里：只提示，不硬删。
                 if (result.status === 409 && result.data && result.data.code === 'session/live') {
-                  return confirmDialog({
-                    title: text.forceTitle, body: text.forceBody(title),
-                    cancelLabel: text.cancel, confirmLabel: text.forceConfirm,
-                  }).then(function (forceConfirmed) {
-                    if (!forceConfirmed) return
-                    return requestDelete(props.sessionId, true).then(function (forced) {
-                      if (forced.ok) refreshSessions()
-                      else window.alert(failureText(text, forced))
-                    })
-                  })
+                  window.alert(t('live', { title: title }))
+                  return
                 }
-                window.alert(failureText(text, result))
+                window.alert(failureText(t, result))
               }).catch(function (error) {
-                window.alert(text.failed(String(error)))
+                window.alert(t('failed', { message: String(error) }))
               })
             })
           }
@@ -225,19 +212,24 @@ window.__ModuleLoader__.load({
             type: 'button',
             role: 'menuitem',
             className: 'dsd-item',
-            title: text.menu,
+            title: t('menu'),
             onClick: onSelect,
           },
           el('span', { className: 'dsd-icon' }, trashIcon()),
-          el('span', { className: 'dsd-label' }, text.menu))
+          el('span', { className: 'dsd-label' }, t('menu')))
         }
 
+        // locale 服务在时把词典注册进本插件命名空间，并让 slot 渲染器合成 props.t；
+        // 切换语言时渲染器重渲染菜单行，文案跟着换。
+        var locale = typeof ctx.get === 'function' ? ctx.get('locale') : undefined
+        var hasLocale = locale !== undefined && locale !== null && typeof locale.register === 'function'
+        if (hasLocale) {
+          try { locale.register(NS, STRINGS) } catch (e) { /* 已注册（HMR 重挂）就沿用现有词典 */ }
+        }
         slots.inject('sidebar.workspaces.session.menu.item', function () {
-          return slots.register({
-            name: 'sidebar.workspaces.session.menu.item',
-            id: 'dsh-session-delete',
-            order: 900,
-          }, DeleteSessionMenuItem)
+          var options = { name: 'sidebar.workspaces.session.menu.item', id: 'dsh-session-delete', order: 900 }
+          if (hasLocale) options.locale = NS
+          return slots.register(options, DeleteSessionMenuItem)
         })
       },
     }

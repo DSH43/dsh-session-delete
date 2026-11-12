@@ -83,6 +83,10 @@ window.__ModuleLoader__.load({
         '.dsd-btn{padding:6px 14px;border-radius:8px;border:1px solid var(--dsw-alias-border-primary,#3a3a3a);',
         '  background:none;color:inherit;font:inherit;cursor:pointer}',
         '.dsd-btn:hover{background:rgba(255,255,255,.06)}',
+        // 焦点环跟按钮自身的边框同色，不要浏览器默认的蓝色 outline。
+        '.dsd-btn:focus{outline:none}',
+        '.dsd-btn:focus-visible{outline:2px solid var(--dsw-alias-border-primary,#3a3a3a);outline-offset:2px}',
+        '.dsd-btn.dsd-danger:focus-visible{outline-color:color-mix(in srgb,var(--dsw-alias-state-error-primary,#f2555a) 45%,transparent)}',
         '.dsd-btn.dsd-danger{color:var(--dsw-alias-state-error-primary,#f2555a);',
         '  border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary,#f2555a) 45%,transparent)}',
       ].join('\n')

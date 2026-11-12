@@ -1,0 +1,10 @@
+# dsh-session-delete bundle patch: mounts the session-delete plugin into a dsh
+# web composition.
+#
+# Host half (host.js) serves POST /plugins/dsh-session-delete/delete; the client
+# half (client.js) adds the 「删除会话」 row to a Session's "..." menu.
+#
+# Installed with: dsh plugin --profile web add "file:/path/to/dsh-session-delete"
+- insert:
+    - id: dsh-session-delete
+      name: dsh-session-delete

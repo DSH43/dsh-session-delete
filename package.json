@@ -1,0 +1,30 @@
+{
+  "name": "dsh-session-delete",
+  "version": "0.1.0",
+  "description": "会话行菜单的「删除会话」：删日志、工作区记账和投影缓存，不碰 dsh 源码",
+  "license": "MIT",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true
+    }
+  },
+  "files": [
+    "index.js",
+    "host.js",
+    "client.js",
+    "cordis.patch.yml",
+    "README.md"
+  ]
+}

@@ -24,6 +24,11 @@ window.__ModuleLoader__.load({
         },
         cancel: '取消',
         confirm: '永久删除',
+        forceTitle: '会话还在 Host 里，强制删除？',
+        forceBody: function (title) {
+          return '“' + title + '”没在跑，但仍被 Host 进程持有。强制删除会清掉磁盘上的日志、工作区记录和缓存；内存里的会话要重启 dsh 才彻底释放，期间它可能把投影缓存写回来。'
+        },
+        forceConfirm: '强制删除',
         failed: function (message) {
           return '删除失败：' + (message || '未知错误')
         },
@@ -36,6 +41,11 @@ window.__ModuleLoader__.load({
         },
         cancel: 'Cancel',
         confirm: 'Delete permanently',
+        forceTitle: 'This session is still held by the Host. Force delete?',
+        forceBody: function (title) {
+          return '“' + title + '” is idle but still held by the Host process. Force delete removes the log, workspace record, and cache from disk; the in-memory session is released only after a dsh restart and may rewrite its cache file before then.'
+        },
+        forceConfirm: 'Force delete',
         failed: function (message) {
           return 'Delete failed: ' + (message || 'unknown error')
         },
@@ -80,8 +90,7 @@ window.__ModuleLoader__.load({
     }
 
     /** 自建确认框：返回 Promise<boolean>，Escape / 点遮罩算取消。 */
-    function confirmDelete(title) {
-      var text = copy()
+    function confirmDialog(options) {
       return new Promise(function (resolve) {
         var overlay = document.createElement('div')
         overlay.className = 'dsd-overlay'
@@ -91,20 +100,20 @@ window.__ModuleLoader__.load({
         card.setAttribute('aria-modal', 'true')
 
         var heading = document.createElement('h2')
-        heading.textContent = text.title
+        heading.textContent = options.title
         var body = document.createElement('p')
-        body.textContent = text.body(title)
+        body.textContent = options.body
 
         var actions = document.createElement('div')
         actions.className = 'dsd-actions'
         var cancel = document.createElement('button')
         cancel.type = 'button'
         cancel.className = 'dsd-btn'
-        cancel.textContent = text.cancel
+        cancel.textContent = options.cancelLabel
         var confirm = document.createElement('button')
         confirm.type = 'button'
         confirm.className = 'dsd-btn dsd-danger'
-        confirm.textContent = text.confirm
+        confirm.textContent = options.confirmLabel
 
         function settle(value) {
           document.removeEventListener('keydown', onKey)
@@ -155,31 +164,58 @@ window.__ModuleLoader__.load({
         if (slots === undefined) return
         injectStyles()
 
+        function requestDelete(sessionId, force) {
+          var payload = force === true ? { sessionId: sessionId, force: true } : { sessionId: sessionId }
+          return fetch('/plugins/dsh-session-delete/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          }).then(function (response) {
+            return response.json().catch(function () { return {} }).then(function (data) {
+              return { ok: response.ok, status: response.status, data: data }
+            })
+          })
+        }
+
+        function refreshSessions() {
+          var sessions = ctx.get('sessions')
+          if (sessions !== undefined && typeof sessions.refresh === 'function') void sessions.refresh()
+        }
+
+        function failureText(text, result) {
+          return text.failed(result.data && (result.data.error || result.data.message))
+        }
+
         function DeleteSessionMenuItem(props) {
           var text = copy()
           var setMenuOpen = props.useMenuOpenState()[1]
           function onSelect() {
             setMenuOpen(false)
             var title = props.displayTitle || props.sessionId
-            void confirmDelete(title).then(function (confirmed) {
+            void confirmDialog({
+              title: text.title, body: text.body(title),
+              cancelLabel: text.cancel, confirmLabel: text.confirm,
+            }).then(function (confirmed) {
               if (!confirmed) return
-              return fetch('/plugins/dsh-session-delete/delete', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sessionId: props.sessionId }),
-              }).then(function (response) {
-                return response.json().catch(function () { return {} }).then(function (data) {
-                  return { ok: response.ok, data: data }
-                })
-              }).then(function (result) {
-                if (!result.ok) {
-                  window.alert(text.failed(result.data && (result.data.error || result.data.message)))
+              return requestDelete(props.sessionId, false).then(function (result) {
+                if (result.ok) {
+                  refreshSessions()
                   return
                 }
-                var sessions = ctx.get('sessions')
-                if (sessions !== undefined && typeof sessions.refresh === 'function') {
-                  void sessions.refresh()
+                // Host 还挂着这条会话：问一次是否强制，强制也只删空闲会话。
+                if (result.status === 409 && result.data && result.data.code === 'session/live') {
+                  return confirmDialog({
+                    title: text.forceTitle, body: text.forceBody(title),
+                    cancelLabel: text.cancel, confirmLabel: text.forceConfirm,
+                  }).then(function (forceConfirmed) {
+                    if (!forceConfirmed) return
+                    return requestDelete(props.sessionId, true).then(function (forced) {
+                      if (forced.ok) refreshSessions()
+                      else window.alert(failureText(text, forced))
+                    })
+                  })
                 }
+                window.alert(failureText(text, result))
               }).catch(function (error) {
                 window.alert(text.failed(String(error)))
               })

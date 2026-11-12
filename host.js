@@ -116,7 +116,18 @@ async function removeProjectionCache(cacheDir, sessionId) {
   }
 }
 
-/** POST /plugins/dsh-session-delete/delete —— 永久删除一条空闲会话。 */
+/** 会话是否有正在执行的工作（回合、子智能体、后台任务、定时任务）。 */
+async function sessionActivity(ctx, sessionId) {
+  if (typeof ctx.waterfall !== 'function') return []
+  try {
+    return await ctx.waterfall('workspace/session-activity', { sessionId }, () => Promise.resolve([]))
+  } catch {
+    return []
+  }
+}
+
+/** POST /plugins/dsh-session-delete/delete —— 永久删除一条会话。 */
+
 async function handleDelete(req, res, ctx) {
   if (req.method !== 'POST') {
     send(res, 405, { error: 'POST only' })
@@ -134,10 +145,21 @@ async function handleDelete(req, res, ctx) {
     send(res, 400, { error: 'invalid sessionId' })
     return
   }
+  const force = body?.force === true
   const sessions = ctx.get('sessions')
-  if (sessions !== undefined && sessions.get(sessionId) !== undefined) {
-    send(res, 409, { error: '会话正在运行，先结束再删除' })
+  const live = sessions !== undefined && sessions.get(sessionId) !== undefined
+  // Host 进程里还挂着这条会话：普通删除拒绝，让客户端来问一次「强制」。
+  if (live && !force) {
+    send(res, 409, { code: 'session/live', error: '会话还在 Host 进程里' })
     return
+  }
+  // 强制删除也不碰正在跑的工作：回合/子智能体/后台任务还在写日志。
+  if (live) {
+    const activity = await sessionActivity(ctx, sessionId)
+    if (activity.length > 0) {
+      send(res, 409, { code: 'session/active', error: '会话有正在执行的工作，先在会话里中断再删' })
+      return
+    }
   }
   // dsh 启动器会 provide dshHomePath；老/精简组合里没有就退回 DSH_HOME 或 ~/.dsh。
   const dshHomePath = ctx.get('dshHomePath')

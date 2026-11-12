@@ -36,9 +36,19 @@ dsh plugin --profile web add "github:DSH43/dsh-session-delete#main"
 改完重启 `dsh web`。已经在 `~/.dsh/profiles/web/package.json` 里登记过
 （dependencies + bundles），profile 的 `cordis.patch.yml` 也有显式 insert。
 
+## 删除还挂在 Host 里的会话
+
+dsh 没有「结束会话」的按钮：打开过的会话会一直留在 Host 进程的 live store 里。
+第一次删除会返回 409，确认后插件带 `force: true` 再发一次：
+
+- 没有正在跑的工作（回合、子智能体、后台任务、定时任务）→ 强制删除，磁盘数据照删；
+- 有正在跑的工作 → 拒绝，先在会话里中断。
+
 ## 限制
 
-- 正在运行的会话不能删，Host 返回 409，先结束会话再删。
+- 强制删除只清磁盘。Host 内存里的那条会话要重启 dsh 才彻底释放；释放时它可能把
+  `session_projcache` 的缓存文件写回来一次（删掉即可）。
+- 真正在跑回合/子智能体的会话不能强制删，插件不碰正在写的日志。
 - 多进程场景（CLI 和 Web 同时开）：另一个进程手里活着的会话可能写回已删目录，
   这种情况升级/重启后再删一次。
 - Session id 做了字符白名单校验，防路径穿越。

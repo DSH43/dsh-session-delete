@@ -30,7 +30,7 @@
 ## 安装
 
 ```bash
-dsh plugin --profile web add "file:/Users/leeo/Documents/workspace-ds/plugin/dsh-session-delete"
+dsh plugin --profile web add "github:DSH43/dsh-session-delete#main"
 ```
 
 改完重启 `dsh web`。已经在 `~/.dsh/profiles/web/package.json` 里登记过

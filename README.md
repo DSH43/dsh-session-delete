@@ -36,6 +36,15 @@ dsh plugin --profile web add "github:DSH43/dsh-session-delete#main"
 改完重启 `dsh web`。已经在 `~/.dsh/profiles/web/package.json` 里登记过
 （dependencies + bundles），profile 的 `cordis.patch.yml` 也有显式 insert。
 
+## 快捷键
+
+会话行「…」菜单打开后：
+
+- 按 `D` 等于点「删除会话」，直接弹确认框；
+- 确认框里确认按钮自动获得焦点，按空格即确认删除（Esc 或点遮罩取消）。
+
+Ctrl / Cmd / Alt 组合键不拦截，输入框里按 D 也不触发。
+
 ## 只删冷会话
 
 dsh 没有「结束会话」的按钮：打开过的会话会一直留在 Host 进程的 live store 里，

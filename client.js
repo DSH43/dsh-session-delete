@@ -2,6 +2,7 @@
  * dsh-session-delete —— client 半。
  *
  * 往会话行的「...」菜单注册一行「删除会话」（order 900，排在所有可逆操作后面）。
+ * 菜单打开时按 D 等于点这一行，弹确认框；确认按钮自动获得焦点，按空格即确认。
  * 点了先弹确认框，确认后 POST /plugins/dsh-session-delete/delete，成功再刷新
  * 会话列表。确认框用自建 DOM 覆盖层，不用 window.confirm，也不依赖 dsh 的
  * Modal —— 菜单关闭时本组件会被卸载，React 弹窗会跟着消失。
@@ -14,6 +15,8 @@ window.__ModuleLoader__.load({
   factory: function (require) {
     var React = require('react')
     var el = React.createElement
+    var useEffect = React.useEffect
+    var useRef = React.useRef
 
     /** dsh locale 命名空间：文案由 dsh 按当前语言解析，切换语言时重渲染。 */
     var NS = 'sessionDelete'
@@ -67,6 +70,8 @@ window.__ModuleLoader__.load({
         '.dsd-icon{display:inline-flex;flex:none;width:14px;height:14px;align-items:center;justify-content:center}',
         '.dsd-icon svg{width:14px;height:14px}',
         '.dsd-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+        '.dsd-key{flex:none;font-size:11px;line-height:16px;padding:0 5px;border-radius:4px;',
+        '  border:1px solid var(--dsw-alias-border-primary,#3a3a3a);color:var(--dsw-alias-label-tertiary,#8b8b8b)}',
         '.dsd-overlay{position:fixed;inset:0;z-index:2147483600;display:flex;align-items:center;',
         '  justify-content:center;background:rgba(0,0,0,.45)}',
         '.dsd-card{width:min(440px,90vw);box-sizing:border-box;padding:20px;border-radius:12px;',
@@ -181,6 +186,28 @@ window.__ModuleLoader__.load({
           return t('failed', { message: message || t('unknown') })
         }
 
+        /** 菜单里按 D 等于点这一行；确认框里的确认按钮自带焦点，空格即确认。 */
+        function useDeleteShortcut(onSelect) {
+          var fired = useRef(false)
+          useEffect(function () {
+            function onKeyDown(event) {
+              if (fired.current === true || event.defaultPrevented === true) return
+              if (event.ctrlKey === true || event.metaKey === true || event.altKey === true) return
+              if (String(event.key).toLowerCase() !== 'd') return
+              var target = event.target
+              var tag = target != null && typeof target.tagName === 'string' ? target.tagName.toLowerCase() : ''
+              if (tag === 'input' || tag === 'textarea' || tag === 'select') return
+              if (target != null && target.isContentEditable === true) return
+              fired.current = true
+              event.preventDefault()
+              event.stopPropagation()
+              onSelect()
+            }
+            document.addEventListener('keydown', onKeyDown, true)
+            return function () { document.removeEventListener('keydown', onKeyDown, true) }
+          }, [])
+        }
+
         function DeleteSessionMenuItem(props) {
           var t = props != null && typeof props.t === 'function' ? props.t : fallbackT
           var setMenuOpen = props.useMenuOpenState()[1]
@@ -208,15 +235,18 @@ window.__ModuleLoader__.load({
               })
             })
           }
+          useDeleteShortcut(onSelect)
           return el('button', {
             type: 'button',
             role: 'menuitem',
             className: 'dsd-item',
             title: t('menu'),
+            'aria-keyshortcuts': 'D',
             onClick: onSelect,
           },
           el('span', { className: 'dsd-icon' }, trashIcon()),
-          el('span', { className: 'dsd-label' }, t('menu')))
+          el('span', { className: 'dsd-label' }, t('menu')),
+          el('span', { className: 'dsd-key', 'aria-hidden': 'true' }, 'D'))
         }
 
         // locale 服务在时把词典注册进本插件命名空间，并让 slot 渲染器合成 props.t；

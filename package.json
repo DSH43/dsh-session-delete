@@ -1,7 +1,7 @@
 {
   "name": "dsh-session-delete",
-  "version": "0.1.5",
-  "description": "会话行菜单的「删除会话」：删日志、工作区记账和投影缓存，不碰 dsh 源码",
+  "version": "0.2.0",
+  "description": "会话行的「删除会话」+ /clear 清空对话：删冷会话的日志、工作区记账和投影缓存，不碰 dsh 源码",
   "license": "MIT",
   "type": "module",
   "main": "index.js",

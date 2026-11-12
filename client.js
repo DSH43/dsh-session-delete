@@ -30,6 +30,8 @@ window.__ModuleLoader__.load({
         live: '“{title}”还挂在 dsh 进程里，现在删不掉。重启 dsh 之后它就变成磁盘上的冷会话，那时再删就干净了。',
         failed: '删除失败：{message}',
         unknown: '未知错误',
+        clearLabel: '清空当前对话',
+        clearDescription: '在当前工作区开一条空白会话；当前这条留在侧栏，随时能回去',
       },
       en: {
         menu: 'Delete session',
@@ -40,6 +42,8 @@ window.__ModuleLoader__.load({
         live: '“{title}” is still held by the running dsh process, so it cannot be deleted now. Restart dsh and it becomes a cold session on disk — delete it then.',
         failed: 'Delete failed: {message}',
         unknown: 'unknown error',
+        clearLabel: 'Clear conversation',
+        clearDescription: 'Start a blank session in this workspace; the current one stays in the sidebar',
       },
     }
 
@@ -168,6 +172,33 @@ window.__ModuleLoader__.load({
         if (slots === undefined) return
         injectStyles()
 
+        /** 注册 /clear：客户端命令，跑起来就是 uiWorkspace.startSession()。 */
+        function installClearCommand(ctx) {
+          if (typeof ctx.inject !== 'function') return
+          ctx.inject(['commandUi', 'uiWorkspace'], function (scope) {
+            var commands = scope.get('commandUi')
+            var workspace = scope.get('uiWorkspace')
+            if (commands === undefined || commands === null) return
+            if (workspace === undefined || workspace === null) return
+            var locale = scope.get('locale')
+            var translate = locale !== undefined && locale !== null && typeof locale.bind === 'function'
+              ? locale.bind(NS)
+              : fallbackT
+            scope.effect(function () {
+              return commands.register({
+                name: 'clear',
+                label: function () { return translate('clearLabel') },
+                description: function () { return translate('clearDescription') },
+                available: function () { return true },
+                ui: {
+                  kind: 'action',
+                  run: function () { workspace.startSession() },
+                },
+              })
+            }, 'dsh-session-delete: /clear')
+          })
+        }
+
         function requestDelete(sessionId) {
           return fetch('/plugins/dsh-session-delete/delete', {
             method: 'POST',
@@ -252,6 +283,11 @@ window.__ModuleLoader__.load({
           el('span', { className: 'dsd-label' }, t('menu')),
           el('span', { className: 'dsd-key', 'aria-hidden': 'true' }, 'D'))
         }
+
+        // /clear：清空当前对话 = 在当前工作区开一条新的空白会话，旧会话留在侧栏。
+        // dsh 没有「清空单条会话历史」的接口：日志是 append-only，活着的会话还被宿主
+        // 持有，能做的语义就是换一条新会话接着聊。
+        installClearCommand(ctx)
 
         // locale 服务在时把词典注册进本插件命名空间，并让 slot 渲染器合成 props.t；
         // 切换语言时渲染器重渲染菜单行，文案跟着换。

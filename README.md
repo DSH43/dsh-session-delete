@@ -36,6 +36,14 @@ dsh plugin --profile web add "github:DSH43/dsh-session-delete#main"
 改完重启 `dsh web`。已经在 `~/.dsh/profiles/web/package.json` 里登记过
 （dependencies + bundles），profile 的 `cordis.patch.yml` 也有显式 insert。
 
+## /clear 命令
+
+输入框里敲 `/clear`，等于在当前工作区开一条新的空白会话（走 `uiWorkspace.startSession()`），
+当前这条留在侧栏，随时能回去。
+
+它清不掉当前会话本身的历史：dsh 的会话日志是 append-only，活着的会话还被宿主进程持有，
+没有「清空单条会话历史」的接口。要删掉整条会话，用菜单里的删除（冷会话才删得掉）。
+
 ## 快捷键
 
 会话行「…」菜单打开后：

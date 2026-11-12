@@ -53,11 +53,15 @@ window.__ModuleLoader__.load({
       var style = document.createElement('style')
       style.id = id
       style.textContent = [
-        '.dsd-item{display:flex;align-items:center;gap:8px;width:100%;padding:6px 10px;',
-        '  border:0;border-radius:6px;background:none;color:var(--dsw-alias-state-error-primary,#f2555a);',
+        // 几何跟 dsh 的 MenuItemButton 逐项对齐：min-height 34、padding 6/8、gap 6、图标 14。
+        '.dsd-item{display:flex;align-items:center;gap:6px;width:100%;min-height:34px;',
+        '  padding:6px 8px;border:0;border-radius:var(--dsw-radius-md,8px);background:none;',
+        '  color:var(--dsw-alias-state-error-primary,#f2555a);',
         '  font:inherit;font-size:13px;line-height:20px;text-align:left;cursor:pointer}',
         '.dsd-item:hover{background:color-mix(in srgb,var(--dsw-alias-state-error-primary,#f2555a) 14%,transparent)}',
-        '.dsd-item svg{flex:none}',
+        '.dsd-icon{display:inline-flex;flex:none;width:14px;height:14px;align-items:center;justify-content:center}',
+        '.dsd-icon svg{width:14px;height:14px}',
+        '.dsd-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
         '.dsd-overlay{position:fixed;inset:0;z-index:2147483600;display:flex;align-items:center;',
         '  justify-content:center;background:rgba(0,0,0,.45)}',
         '.dsd-card{width:min(440px,90vw);box-sizing:border-box;padding:20px;border-radius:12px;',
@@ -187,7 +191,9 @@ window.__ModuleLoader__.load({
             className: 'dsd-item',
             title: text.menu,
             onClick: onSelect,
-          }, trashIcon(), text.menu)
+          },
+          el('span', { className: 'dsd-icon' }, trashIcon()),
+          el('span', { className: 'dsd-label' }, text.menu))
         }
 
         slots.inject('sidebar.workspaces.session.menu.item', function () {
